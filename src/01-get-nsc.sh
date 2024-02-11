@@ -15,16 +15,16 @@
 
 # Identify inputs and outputs.
 URL="https://www.maine.gov/doe/data-reporting/reporting/warehouse/NSC-%d"
-RAW="$(pwd)/in/raw/ncs"
+RAW="$(pwd)/in/raw/nsc"
 PRG="$(pwd)/src/01-get-nsc.py"
-OUT="$(pwd)/in/ncs.csv"
+OUT="$(pwd)/in/nsc.csv"
 
 # Set year range, e.g. spring of school year.
 ymin=2019
 ymax=2021
 
 # Consider each year.
-for year in {$ymin..$ymax}
+for year in $(seq $ymin $ymax)
 do
 
   # Set locations.
@@ -37,11 +37,16 @@ do
   raw=$RAW/$year
 
   # Get pdfs listed on website.
-  wget -q -O- $url \
+  tmp=$(mktemp)
+  curl -s $url \
   | grep "<a.*href=\".*\.pdf\"" \
   | sed -E "s/^.*(href=\")(.*\.pdf)(\").*$/\2/" \
   | sed -E "/^https?:\/\/www.maine.gov/! s/^/https:\/\/www.maine.gov/" \
-  | wget -q -i- -P $raw
+  | sed -E "s/^http:/https:/" \
+  > $tmp
+
+  # Download pdfs.
+  xargs -n 1 curl -s --output-dir $raw -O < $tmp
 
 done
 
@@ -50,10 +55,10 @@ raw=$(printf $RAW 2019)
 fk=$raw/FortKent.pdf
 mv $fk.1 $fk
 ff=https://www.maine.gov/doe/sites/maine.gov.doe/files/bulk/data/nsc/2018/FortFairfield.pdf
-wget -q -P $raw $ff
+curl -s --output $raw $ff
 
 # Extract tables from pdfs.
 find $RAW \
 | grep "\.pdf$" \
-| python3 $PRG \
+| python $PRG \
 > $OUT

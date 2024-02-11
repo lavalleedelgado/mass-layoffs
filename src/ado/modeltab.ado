@@ -1,4 +1,4 @@
-*! version 1.1, Patrick Lavallee Delgado, October 2023
+*! version 1.2, Patrick Lavallee Delgado, October 2024
 
 capture program drop modeltab
 program define modeltab
@@ -10,18 +10,23 @@ program define modeltab
   ******************************************************************************
 
   * Parse arguments.
-  syntax anything using/, [ ///
-    stars nostars STARS2(numlist max=3 >=0 <=1 sort) ///
-    labels nolabels LABELS2(string asis) ///
-    drop(string) keep(string) ///
+  syntax [anything] using/, [ ///
+    stars nostars STARS2(numlist max=3 >=0 <=1 sort) format(string) ///
+    labels nolabels LABELS2(string asis) altvallabel ///
+    rename(string) drop(string) keep(string) keepempty ///
     margins(varname) ///
-    barebones NOTABSPEC NOHLINE ///
+    barebones NOTABSPEC noobs ///
+    addrows(string asis) ///
     * ///
   ]
 
-  * Specify regular expressions for factor variable coefficient.
-  local FNOTATION (([0-9]+)?[cbon]{0,2}\.)
-  local FVPATTERN `FNOTATION'?([a-z0-9_]+)
+  * Specify regular expressions for time-series and factor variable coefficient.
+  local TVARPAT c?([lfds])([0-9])*\.
+  local FVARPAT ([0-9]+)?[cbon]{0,2}\.
+  local COEFPAT (`TVARPAT'|`FVARPAT')?([a-z0-9_]+)
+
+  * Specify default estimation results.
+  if "`anything'" == "" local anything *
 
   * Save current estimation results if required.
   if strpos("`anything'", ".") {
@@ -57,7 +62,6 @@ program define modeltab
   if "`barebones'" != "" {
     local labels  nolabels
     local tabspec notabspec
-    local hline   nohline
   }
 
   * Specify default significance levels.
@@ -66,8 +70,20 @@ program define modeltab
   if "`stars'" == "nostars" local starslevels
   local n_starslevels : word count `starslevels'
 
+  * Specify default number format.
+  if "`format'" == "" local format %20.8f
+  local dformat = ustrregexrf("`format'", "\.[0-9]+", ".0")
+
   * Specify default column labels.
   local labellist `labels2'
+
+  * Check even number of renaming arguments.
+  local n_rename : word count `rename'
+  capture assert !mod(`n_rename', 2)
+  if _rc {
+    display as error "corresponding oldnames and newnames mismatch"
+    error 198
+  }
 
   * Check only either drop or keep.
   capture opts_exclusive "`"`drop'"'" "`"`keep'"'"
@@ -97,12 +113,21 @@ program define modeltab
 
       * Get model estimates.
       estimates restore `: word `m' of `modellist''
-      local n : display %12.0f `e(N)'
+      local n : display `dformat' `e(N)'
 
       * Get regression table.
       tempname reg
       __etable `reg', `options'
       matrix coleq `reg' = `m'
+
+      * Rename coefficients if requested.
+      local coeflist : rowvarlist `reg'
+      forvalues i = 1(2)`n_rename' {
+        local old : word `i' of `rename'
+        local new : word `++i' of `rename'
+        local coeflist = regexreplaceall("`coeflist'", "`old'", "`new'")
+      }
+      matrix rownames `reg' = `coeflist'
 
       * Register this table, dependant variable, sample size with all others.
       local estlist `estlist' `reg'
@@ -116,17 +141,19 @@ program define modeltab
     local C `M'
 
     * Set model column labels.
-    if "`labellist'" == "" {
-      forvalues m = 1/`M' {
-        local labellist "`labellist' "(`m')""
+    if `: list sizeof labellist' <= 1 {
+      if "`labellist'" == "" {
+        forvalues m = 1/`M' {
+          local labellist "`labellist' "(`m')""
+        }
       }
-    }
-    if "`labellist'" == "depvar" {
-      local labellist
-      forvalues m = 1/`M' {
-        local var : word `m' of `depvarlist'
-        local lab : variable label `var'
-        local labels "`labels' "`lab'""
+      if "`labellist'" == "depvar" {
+        local labellist
+        forvalues m = 1/`M' {
+          local var : word `m' of `depvarlist'
+          local lab : variable label `var'
+          local labels "`labels' "`lab'""
+        }
       }
     }
   }
@@ -159,7 +186,7 @@ program define modeltab
       * Get model estimates.
       estimates restore `: word `m' of `modellist''
       local depvar `e(depvar)'
-      local n : display %12.0f `e(N)'
+      local n : display `dformat' `e(N)'
 
       * Consider each research group.
       local mgnlist
@@ -216,7 +243,7 @@ program define modeltab
   if "`tabspec'" != "notabspec" {
     local colspec = "S" * `C'
     file write `f' "\begin{tabular}{l`colspec'}" _n
-    file write `f' _col(3) "\hline\hline" _n
+    file write `f' _col(3) "\hline\hline \\ [-0.5 em]" _n
   }
 
   * Write column headers.
@@ -226,15 +253,14 @@ program define modeltab
       local lab : word `c' of `labellist'
       local header "`header' & \multicolumn{1}{c}{`lab'}"
     }
-    file write `f' _col(3) "`header' \\" _n
-    file write `f' _col(3) "\hline" _n
+    file write `f' _col(3) "`header' \\ [0.5 em]" _n
+    file write `f' _col(3) "\hline \\ [-0.5 em]" _n
   }
 
   * Write parameter estimates.
   foreach par in `: rowvarlist `est'' {
 
-    * Skip this parameter if omitted or requested.
-    if ustrregexm("`par'", "^[0-9]+[obn]+\.", 1) continue
+    * Skip this parameter if requested.
     if "`drop'`keep'" != "" {
       local check 0
       foreach pat in `drop' `keep' {
@@ -247,36 +273,71 @@ program define modeltab
       if "`keep'" != "" & `check' == 0 continue
     }
 
+    * Skip this parameter if omitted.
+    local empty = ustrregexm("`par'", "^[0-9]+[obn]+\.", 1)
+    if `empty' & "`keepempty'" == "" continue
+
     * Get parameter label.
     local rowlabel
     local varlist = regexreplace("`par'", "#", " ")
     local K : word count `varlist'
     forvalues k = 1/`K' {
 
-      * Get next name.
+      * Get next coefficient name.
       local var : word `k' of `varlist'
       local lab `var'
 
-      * Handle variable.
+      * Attempt variable name.
       capture {
-        assert ustrregexm("`var'", "^`FVPATTERN'", 1)
-        local var = ustrregexs(3)
-        local lvl = ustrregexs(2)
+        assert ustrregexm("`var'", "^`COEFPAT'", 1)
+        local var = ustrregexs(5)
+        local tso = ustrregexs(2)
+        local tsi = ustrregexs(3)
+        local fvi = ustrregexs(4)
         confirm variable `var'
       }
+
+      * Handle variable.
       if !_rc {
+
+        * Get variable label.
         local lab : variable label `var'
-        if "`lvl'" != "" {
-          local vlab : value label `var'
-          if "`vlab'" != "" {
-            local sg : label `vlab' `lvl'
+
+        * Add time-series label.
+        if "`tso'" != "" {
+          if mi("`tsi'") local tsi 1
+          if "`tso'" == "D" {
+            local lab "$\Delta_{`tsi'}$ `lab'"
+          }
+          else if inlist("`tso'", "L", "F") {
+            local tsi = cond("`tso'" == "l", -1, 1)
+            local lab "`lab' ($t_{`tsi'}$)"
           }
           else {
-            local sg : display `: format `var'' `lvl'
+            local lab "`lab' (`tso'`tsi')"
+          }
+        }
+
+        * Add factor level.
+        if "`fvi'" != "" {
+          local vlab : value label `var'
+          if "`vlab'" != "" {
+            local sg : label `vlab' `fvi'
+          }
+          else {
+            local sg : display `: format `var'' `fvi'
             local sg = strtrim("`sg'")
           }
-          local lab "`lab': `sg'"
+          if "`altvallabel'" != "" & "`lab'" != "" {
+            local lab "`lab': `sg'"
+          }
+          else {
+            local lab `sg'
+          }
         }
+
+        * Escape ampersands.
+        local lab = ustrregexra("`lab'", "&", "\\&", 1)
       }
 
       * Handle intercept.
@@ -289,10 +350,10 @@ program define modeltab
         local rowlabel `lab'
       }
       else if `k' == 2 {
-        local rowlabel (`rowlabel') x (`lab')
+        local rowlabel (`rowlabel') $\times$ (`lab')
       }
       else {
-        local rowlabel `rowlabel' x (`lab')
+        local rowlabel `rowlabel' $\times$ (`lab')
       }
     }
 
@@ -307,7 +368,7 @@ program define modeltab
         * Format significance level.
         local sig
         if "`stars'" != "nostars" {
-          local p = `est'["`par'", "`c':pvalue"]
+          local p : display `format' `est'["`par'", "`c':pvalue"]
           foreach a of numlist `starslevels' {
             if `p' < `a' local sig `sig'*
           }
@@ -315,12 +376,12 @@ program define modeltab
         }
 
         * Format point estimate.
-        local b = `est'["`par'", "`c':b"]
-        if mi(`b') local b
+        local b : display `format' `est'["`par'", "`c':b"]
+        if mi(`b') | `empty' local b {---}
         local betas `betas' & `b'`sig'
 
         * Format standard error.
-        local se = `est'["`par'", "`c':se"]
+        local se : display `format' `est'["`par'", "`c':se"]
         if mi(`se') local se
         else        local se (`se')
         local sigmas `sigmas' & `se'
@@ -328,7 +389,7 @@ program define modeltab
 
       * Write rows.
       file write `f' _col(3) "`rowlabel' `betas' \\" _n
-      file write `f' _col(3) "`sigmas' \\ [0.5em]" _n
+      file write `f' _col(3) "`sigmas' \\ [0.5 em]" _n
     }
 
     * Handle margins table.
@@ -343,7 +404,7 @@ program define modeltab
         * Format significance level.
         local sig
         if "`stars'" != "nostars" {
-          local p = `est'["`par'", "`c':pvalue"]
+          local p : display `format' `est'["`par'", "`c':pvalue"]
           foreach a of numlist `starslevels' {
             if `p' < `a' local sig `sig'*
           }
@@ -351,18 +412,18 @@ program define modeltab
         }
 
         * Format point estimate.
-        local b = `est'["`par'", "`c':b"]
-        if mi(`b') local b
+        local b : display `format' `est'["`par'", "`c':b"]
+        if mi(`b') | `empty' local b {---}
         local betas `betas' & `b'`sig'
 
         * Format standard error.
-        local se = `est'["`par'", "`c':se"]
+        local se : display `format' `est'["`par'", "`c':se"]
         if mi(`se') local se
         else        local se (`se')
         local sigmas `sigmas' & `se'
 
         * Format sample size.
-        local n = `est'["`par'", "`c':n"]
+        local n : display `dformat' `est'["`par'", "`c':n"]
         if mi(`n')  local n
         else        local n [`n']
         local ns `ns' & `n'
@@ -371,21 +432,27 @@ program define modeltab
       * Write rows.
       file write `f' _col(3) "`rowlabel' `betas' \\" _n
       file write `f' _col(3) "`sigmas' \\" _n
-      file write `f' _col(3) "`ns' \\ [0.5em]" _n
+      file write `f' _col(3) "`ns' \\ [0.5 em]" _n
+    }
+  }
+
+  * Write any extra rows.
+  if `: list sizeof addrows' {
+    file write `f' _col(3) "\hline \\ [-0.5 em]" _n
+    foreach row of local addrows {
+      file write `f' _col(3) "`row' \\ [0.5 em]" _n
     }
   }
 
   * Write sample sizes for regressions table.
-  if "`table'" == "regressions" {
-    if "`hline'" != "nohline" {
-      file write `f' _col(3) "\hline" _n
-    }
-    file write `f' _col(3) "Sample size `nlist' \\" _n
+  if "`table'" == "regressions" & "`obs'" != "noobs" {
+    file write `f' _col(3) "\hline \\ [-0.5 em]" _n
+    file write `f' _col(3) "Sample size `nlist' \\ [0.5 em]" _n
   }
 
   * Finish table.
   if "`tabspec'" != "notabspec" {
-    file write `f' _col(3) "\hline" _n
+    file write `f' _col(3) "\hline\hline" _n
     file write `f' "\end{tabular}" _n
   }
 
@@ -401,8 +468,9 @@ program define __etable
 
   syntax name, [csdid(string) *]
   local out `namelist'
+  local cmd = strtrim("`e(cmd)' `e(cmd_mi)'")
 
-  if "`e(cmd)'" == "csdid" {
+  if "`cmd'" == "csdid" {
     local matlist
     foreach cmd of local csdid {
       estat `cmd'
@@ -413,9 +481,31 @@ program define __etable
     matrix rowjoinbyname `out' = `matlist'
   }
 
+  else if regexm("`cmd'", "^mi estimate a?reg") {
+    mata: __etable_mi("`out'")
+    matrix rownames `out' = `: colnames e(b_mi)'
+  }
+
   else {
     ereturn display
     matrix `out' = r(table)'
+  }
+
+  if "`cmd'" == "xtpoisson" {
+    matrix roweq `out' = ""
+  }
+
+end
+
+mata:
+
+  void __etable_mi(string scalar out) {
+    b = st_matrix("e(b_mi)")'
+    se = sqrt(diagonal(st_matrix("e(V_mi)")))
+    df = st_matrix("e(df_mi)")'
+    pvalue = 2 * ttail(df, abs(b :/ se))
+    st_matrix(out, (b, se, pvalue))
+    st_matrixcolstripe(out, ("", "b" \ "" , "se" \ "", "pvalue"))
   }
 
 end

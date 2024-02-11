@@ -5,7 +5,8 @@
 # Author:   Patrick Lavallee Delgado
 # Created:  16 December 2023
 #
-# Notes:
+# Notes:    Endpoints documentation:
+#           https://github.com/UrbanInstitute/education-data-package-r
 #
 # To do:
 #
@@ -80,11 +81,22 @@ def get_ccd(year: int) -> pd.DataFrame:
     .reset_index()
   )
 
+  # Get enrollment data for eleventh grade.
+  url = URBAN_API + f"/ccd/enrollment/{year}/grade-11"
+  g11 = (
+    make_request(url)
+    .rename(columns={"enrollment": "enrl_g11"})
+    .loc[:, ["ncessch", "enrl_g11"]]
+  )
+
   # Merge and return the data.
   return (
     ccd
     .merge(sex, how="left", on="ncessch", validate="1:1")
     .merge(race, how="left", on="ncessch", validate="1:1")
+    .merge(g11, how="left", on="ncessch", validate="1:1")
+    .rename(columns={"race_total": "enrl_g12"})
+    .drop(columns="sex_total")
   )
 
 

@@ -24,8 +24,9 @@ MAP = "https://nominatim.openstreetmap.org/search.php"
 PWD = os.getcwd()
 DTA = os.path.join(PWD, "in")
 WRN = os.path.join(DTA, "warn.xlsx")
+TMP = os.path.join(PWD, "tmp", "warn-loc.csv")
 CCD = os.path.join(DTA, "ccd.csv")
-SHP = os.path.join(DTA, "shapefile/tl_2019_23_tract.shp")
+SHP = os.path.join(DTA, "shapefile/tl_{:d}_23_tract.shp")
 OUT = os.path.join(DTA, "loc.csv")
 
 # Request coordinates for address.
@@ -43,6 +44,7 @@ assert wrn.set_index("id").index.is_unique
 # Locate mass layoff sites.
 wrn["loc"] = wrn[["address", "city", "state", "zip"]].apply(" ".join, axis=1)
 wrn[["lat", "lon"]] = wrn["loc"].apply(get_coord)
+wrn.to_csv(TMP, index=False)
 
 # Load schools.
 ccd = pd.read_csv(CCD).rename(columns={"latitude": "lat", "longitude": "lon"})
@@ -59,10 +61,16 @@ gdf = ccd.merge(wrn, how="cross", suffixes=("_ccd", "_wrn"))
 assert gdf.shape[0] == (ccd.shape[0] * wrn.shape[0])
 gdf["dist"] = gdf.apply(get_dist, axis=1)
 
-# Lookup census tracts for schools.
-shp = gpd.read_file(SHP)
-gdf = gpd.GeoDataFrame(gdf, geometry=gpd.points_from_xy(gdf["lon_ccd"], gdf["lat_ccd"]), crs=shp.crs)
-gdf = gdf.sjoin(shp, how="left", predicate="within")
+# Load census tracts.
+s19 = gpd.read_file(SHP.format(2019))
+s20 = gpd.read_file(SHP.format(2020))
+assert s19.crs == s20.crs
+
+# Locate schools within census tracts.
+gdf = gpd.GeoDataFrame(gdf, geometry=gpd.points_from_xy(gdf["lon_ccd"], gdf["lat_ccd"]), crs=s19.crs)
+d19 = gdf.loc[lambda df: df["year"].le(2019)].sjoin(s19, how="left", predicate="within")
+d20 = gdf.loc[lambda df: df["year"].ge(2020)].sjoin(s20, how="left", predicate="within")
+gdf = pd.concat([d19, d20])
 
 # Write to disk.
 varlist = [

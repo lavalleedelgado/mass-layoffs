@@ -1,7 +1,7 @@
 # Mass layoffs and college enrollment in Maine
-Patrick Lavallee Delgado  
-University of Pennsylvania  
-December 2023
+Patrick Lavallee Delgado \
+University of Pennsylvania \
+October 2024
 
 ## Abstract
 

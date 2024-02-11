@@ -16,7 +16,7 @@ program define putlabels
 
   * Parse arguments.
   syntax using/, [ ///
-    variables(string) varname(string) varlabel(string) vallabel(string) format(string) ///
+    variables(string) varname(string) varlabel(string) vallabel(string) series(string) format(string) ///
     values(string) value(string) label(string) ///
     DROP NODROP ORDER NOORDER REPLACE ///
     keepif(string asis) ///
@@ -30,7 +30,7 @@ program define putlabels
   }
 
   * Set default sheet and column names.
-  foreach x in variables varname varlabel vallabel format values value label {
+  foreach x in variables varname varlabel vallabel series format values value label {
     if mi("``x''") local `x' `x'
   }
 
@@ -59,6 +59,18 @@ program define putlabels
   if "`keepif'" != "" {
     keep if `keepif'
   }
+
+  * Expand series of variables.
+  tempvar idx k j
+  gen `idx' = _n
+  split `series', gen(`k')
+  reshape long `k', i(`varname') j(`j')
+  drop if mi(`k') & `j' > 1
+  foreach var of varlist `varname' `varlabel' {
+    replace `var' = ustrregexra(`var', "%s", `k', 1)
+  }
+  isid `varname'
+  sort `idx'
 
   * Check whether to set value labels and formats.
   foreach x in vallabel format {
@@ -165,7 +177,7 @@ program define putlabels
   if _rc {
     noisily {
       display "variables not in the data:"
-      list `varname' `varlabel' if !`ok', ab(32)
+      list `varname' `varlabel' if !`ok', ab(32) noobs
     }
   }
 

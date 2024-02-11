@@ -25,5 +25,5 @@ ymax=2020
 for data in ccd edfacts
 do
   out=$(printf $OUT $data)
-  python3 $PRG $data $ymin $ymax > $out
+  python $PRG $data $ymin $ymax > $out
 done
