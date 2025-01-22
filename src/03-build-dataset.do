@@ -279,7 +279,7 @@ assert _merge == 3
 drop _merge
 
 * Calculate months between cohort graduation and notification date.
-gen grad = mofd(mdy(7, 1, year))
+gen grad = mofd(mdy(7, 1, year + 1))
 gen diff = mofd(date) - grad
 
 * Drop cohorts that precede the WARN data.
