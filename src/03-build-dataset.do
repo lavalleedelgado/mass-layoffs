@@ -282,11 +282,11 @@ drop _merge
 gen grad = mofd(mdy(7, 1, year + 1))
 gen diff = mofd(date) - grad
 
-* Drop cohorts that precede the WARN data.
+* Drop cohorts without at least a year of WARN data.
 gen cohort = mod(year, 100) * 100 + mod(year, 100) + 1
 tabstat diff, by(cohort) statistics(N min max) nototal
 bysort cohort: egen diff_min = min(diff)
-levelsof cohort if -3 < diff_min, local(censorlist) sep(,)
+levelsof cohort if -12 < diff_min, local(censorlist) sep(,)
 drop if inlist(cohort, `censorlist')
 
 * Calculate total mass layoff dosage.
