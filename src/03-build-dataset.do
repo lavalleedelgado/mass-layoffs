@@ -51,10 +51,11 @@ log using "`LOG'", replace
 ********************************************************************************
 
 * Set school year range.
+* FFSS format, e.g., school year 2010-11 is 1011.
 local ymin 1011
 local ymax 2021
 
-* Read updates.
+* Read updates to crosswalk that arise from school closures over time.
 import delimited "`FIX'", clear
 tostring ncessch, format(%12.0f) replace
 isid ncessch
@@ -208,6 +209,8 @@ assert _merge > 1
 tabulate school_type _merge
 assert check == 1 if _merge > 2 & school_type != 1
 drop if school_type != 1
+list school_name school_type if ceeb == 200249, ab(32) noobs
+drop if ceeb == 200249
 
 * Drop matched school-cohorts with no outcomes and marked as closed.
 * Note this assumes future schools with outcomes were already open.
@@ -450,3 +453,7 @@ save "`OUT'", replace
 
 * Close the log.
 log close
+
+* Archive output.
+archive "`LOG'", into("_archive")
+archive "`OUT'", into("_archive")
