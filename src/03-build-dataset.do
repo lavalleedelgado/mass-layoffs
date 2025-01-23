@@ -21,6 +21,7 @@ local WRN "`DTA'/warn.xlsx"
 local LOC "`DTA'/loc.csv"
 local ACS "`DTA'/acs.csv"
 local WGT "`DTA'/wgt.csv"
+local MLL "`DTA'/mill.xlsx"
 local VAR "`DTA'/varlist.xlsx"
 local OUT "`PWD'/out/analysis.dta"
 
@@ -330,6 +331,18 @@ tabulate cohort _merge
 assert (_merge == 2) == inlist(cohort, `censorlist')
 drop if _merge == 2
 drop _merge
+
+* Merge onto mill town status.
+preserve
+  import excel "`MLL'", firstrow clear
+  isid ceeb
+  recode mill (2 = 0)
+  assert inlist(mill, 0, 1)
+  keep ceeb mill
+  tempfile mll
+  save "`mll'"
+restore
+merge m:1 ceeb using "`mll'", assert(2 3) keep(3) nogen
 
 ********************************************************************************
 * Clean outcomes and covariates.
