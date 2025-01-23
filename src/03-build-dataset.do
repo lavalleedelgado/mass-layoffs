@@ -20,6 +20,7 @@ local EDF "`DTA'/edfacts.csv"
 local WRN "`DTA'/warn.xlsx"
 local LOC "`DTA'/loc.csv"
 local ACS "`DTA'/acs.csv"
+local WGT "`DTA'/wgt.csv"
 local VAR "`DTA'/varlist.xlsx"
 local OUT "`PWD'/out/analysis.dta"
 
@@ -278,6 +279,16 @@ joinby geoid year using `acs', unmatched(master)
 assert _merge == 3
 drop _merge
 
+* Merge onto workforce weights.
+preserve
+  import delimited "`WGT'", clear
+  describe
+  isid ncessch year
+  tempfile wgt
+  save `wgt'
+restore
+merge m:1 ncessch year using `wgt', assert(3) nogen
+
 * Calculate months between cohort graduation and notification date.
 gen grad = mofd(mdy(7, 1, year + 1))
 gen diff = mofd(date) - grad
@@ -289,14 +300,26 @@ bysort cohort: egen diff_min = min(diff)
 levelsof cohort if -12 < diff_min, local(censorlist) sep(,)
 drop if inlist(cohort, `censorlist')
 
-* Calculate total mass layoff dosage.
-gen dosage = layoffs / den_emp / ceil(dist / avg_commute)
+* Calculate mass layoff dosage.
+gen dosage = layoffs / tot_emp / ceil(dist / avg_commute)
+assert dosage < 1
+
+* Calculate total dosage.
+tempvar d
 foreach m of numlist 3 12 24 {
-  bysort ncessch cohort: egen signal_`m'mo = total(dosage * inrange(diff, `m' - 48, `m' - 1) ^ (-1 / (diff - `m')))
+
+  * Time discount factor with present bias.
+  gen     `d' = -(diff - `m') / 12 - 1
+  replace `d' = 1 if ceil(`d') == 0
+  replace `d' = . if ceil(`d') < 0
+
+  * Total dosage.
+  bysort ncessch cohort: egen signal_`m'mo = total(dosage ^ `d')
+  drop `d'
 }
 
 * Bring to school-cohort level.
-keep ncessch cohort signal_*mo `acsvarlist'
+keep ncessch cohort signal_*mo `acsvarlist' tot_emp
 duplicates drop
 isid ncessch cohort
 
