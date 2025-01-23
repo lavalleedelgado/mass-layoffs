@@ -1,7 +1,7 @@
 # Mass layoffs and college enrollment in Maine
 Patrick Lavallee Delgado \
 University of Pennsylvania \
-October 2024
+November 2024
 
 ## Abstract
 
@@ -29,7 +29,10 @@ I offer this repository to replicate these findings.
 
 - `01-get-nsc.sh` downloads pdfs of NSC data and scrapes the tables into a dataset.
 - `01-get-urban.sh` downloads CCD and EDFacts data from the Urban Institute API.
-- `01-get-acs.sh` downloads ACS data and the census tract shapefile.
-- `02-locate-sites.py` identifies the latitude and longitude of each mass layoff site, calculates the straight line distance of each site to each school in the CCD, and joins each site-school pair with the census tract of the school.
+- `01-get-acs.sh` downloads ACS data.
+- `01-get-shp.sh` downloads census tract shapefiles.
+- `02a-locate-sites.py` identifies the latitude and longitude of each mass layoff site, calculates the straight line distance of each site to each school in the CCD, and joins each site-school pair with the census tract of the school.
+- `02b-calculate-weights.r` calculate the total workforce within commuting distance of each school.
 - `03-build-dataset.do` collects the data into an analytic file.
 - `04-run-analysis.do` estimates the models presented in the paper.
+- `05-make-maps.r` draws maps presented in the paper.
